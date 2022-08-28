@@ -1,6 +1,9 @@
 const express = require('express');
 const cors = require('cors');
 
+// jwt token 
+var jwt = require('jsonwebtoken');
+
 // from dotenv 
 require('dotenv').config();
 
@@ -30,13 +33,28 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 //     client.close();
 // });
 
+function verifyJwt(req, res, next) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader) {
+        return res.status(403).send({ message: 'unAuthorized Access' })
+    }
+    const token = authHeader.split(' ')[1]
+    jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
+        if (err) {
+            return res.status(401).send({ message: "Forbidden Access" });
+        }
+        req.decoded = decoded;
+        next();
+    });
+}
+
 async function run() {
     try {
         await client.connect()
 
         const eletricalCollection = client.db('electrical').collection('tools&parts');
         const purchaseCollection = client.db('electrical').collection('purchasedItems');
-
+        const userCollection = client.db("electrical").collection("users");
         // get tools and parts 
         app.get('/tools', async (req, res) => {
             const query = {};
@@ -53,11 +71,53 @@ async function run() {
             res.send(purchaseItem);
         });
 
+
         app.post('/purchase', async (req, res) => {
             const purchase = req.body;
             const result = await purchaseCollection.insertOne(purchase)
             res.send(result)
         })
+
+        // get all my purchase
+        app.get('/purchase', verifyJwt, async (req, res) => {
+            const email = req.query.email;
+            const query = { email: email }
+            const purchases = await purchaseCollection.find(query).toArray();
+            res.send(purchases);
+        })
+
+
+
+
+
+        // first step to jwt 
+        app.put('/user/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = req.body;
+            const filter = { email: email };
+            const options = { upsert: true }
+            const updateDocs = {
+                $set: user,
+            }
+            const result = await userCollection.updateOne(filter, updateDocs, options)
+            // jwt 
+            const token = jwt.sign({ email: email },
+                process.env.ACCESS_TOKEN, {
+                expiresIn: '1hr'
+            })
+
+            res.send({ result, token })
+        })
+
+        // all users 
+
+        app.get('/alluser', async (req, res) => {
+            const users = await userCollection.find().toArray()
+            res.send(users)
+        })
+
+
+
     }
     finally {
 
