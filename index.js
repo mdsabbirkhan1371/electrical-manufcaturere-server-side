@@ -35,10 +35,13 @@ const client = new MongoClient(uri, { useNewUrlParser: true, useUnifiedTopology:
 
 function verifyJwt(req, res, next) {
     const authHeader = req.headers.authorization;
+
     if (!authHeader) {
-        return res.status(403).send({ message: 'unAuthorized Access' })
+        return res.status(403).send({ message: "unAuthorized Access" })
     }
     const token = authHeader.split(' ')[1]
+
+    // verify a token symmetric
     jwt.verify(token, process.env.ACCESS_TOKEN, function (err, decoded) {
         if (err) {
             return res.status(401).send({ message: "Forbidden Access" });
@@ -46,6 +49,17 @@ function verifyJwt(req, res, next) {
         req.decoded = decoded;
         next();
     });
+
+}
+// admin api verify 
+const verifyAdmin = async (req, res, next) => {
+
+    if (requesterAccount.role === 'admin') {
+        next();
+    }
+    else {
+        res.status(403).send({ message: 'forbidden' });
+    }
 }
 
 async function run() {
@@ -79,11 +93,12 @@ async function run() {
         })
 
         // get all my purchase
-        app.get('/purchase', verifyJwt, async (req, res) => {
+        app.get('/purchase', async (req, res) => {
             const email = req.query.email;
             const query = { email: email }
             const purchases = await purchaseCollection.find(query).toArray();
             res.send(purchases);
+
         })
 
 
@@ -114,10 +129,26 @@ async function run() {
         app.get('/alluser', async (req, res) => {
             const users = await userCollection.find().toArray()
             res.send(users)
-        })
+        });
 
+        // make an admin api 
+        app.put('/alluser/admin/:email', async (req, res) => {
+            const email = req.params.email;
+            const filter = { email: email };
+            const updateDoc = {
+                $set: { role: 'admin' },
+            };
+            const result = await userCollection.updateOne(filter, updateDoc);
+            res.send(result);
+        });
 
-
+        // check admin if not then not allow to make an admin 
+        app.get('/admin/:email', async (req, res) => {
+            const email = req.params.email;
+            const user = await userCollection.findOne({ email: email });
+            const isAdmin = user.role === 'admin';
+            res.send({ admin: isAdmin });
+        });
     }
     finally {
 
